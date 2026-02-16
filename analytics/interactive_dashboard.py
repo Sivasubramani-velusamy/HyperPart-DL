@@ -9,6 +9,7 @@ import pandas as pd
 from storage.node_simulation import StorageNode
 from analytics.metrics import compute_replication_counts
 import json
+import networkx as nx
 
 
 def create_utilization_dashboard(nodes: List[StorageNode], replication_counts: Dict[str, int]) -> go.Figure:
@@ -41,145 +42,56 @@ def create_utilization_dashboard(nodes: List[StorageNode], replication_counts: D
             hover_texts.append(f"{nid}<br>Blocks: {util}/{cap} ({r*100:.0f}%)")
 
     fig.add_trace(
-        go.Bar(x=node_ids, y=utilizations, name="Blocks", marker_color="steelblue",
-               hovertext=hover_texts, hoverinfo="text"),
+        go.Bar(x=node_ids, y=utilizations, name="Blocks", marker_color="steelblue", hovertext=hover_texts, hoverinfo='text'),
         row=1, col=1
     )
-    
-    # Right: Top replicated files
-    top_files = sorted(replication_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-    labels, counts = zip(*top_files) if top_files else ([], [])
+
+    # Right: replication distribution
+    rep_labels = list(replication_counts.keys())
+    rep_values = list(replication_counts.values())
     fig.add_trace(
-        go.Bar(x=list(labels), y=list(counts), name="Replicas", marker_color="coral",
-               hovertemplate="<b>%{x}</b><br>Replicas: %{y}<extra></extra>"),
+        go.Bar(x=rep_labels, y=rep_values, name="Replications", marker_color="indianred"),
         row=1, col=2
     )
-    
-    fig.update_xaxes(title_text="Node", row=1, col=1)
-    fig.update_xaxes(title_text="File Label", row=1, col=2)
-    fig.update_yaxes(title_text="Count", row=1, col=1)
-    fig.update_yaxes(title_text="Replication Count", row=1, col=2)
-    
-    fig.update_layout(
-        title_text="HyperPart-DL: Node Utilization & File Replication",
-        height=500,
-        showlegend=False,
-        hovermode="x unified"
-    )
-    
-    return fig
 
-
-def create_metrics_timeseries(history: List[Dict]) -> go.Figure:
-    """Create interactive time-series plot from simulation history.
-    
-    Args:
-        history: List of metrics dictionaries from DynamicSimulation.
-    
-    Returns:
-        Plotly Figure with multiple traces.
-    """
-    df = pd.DataFrame(history)
-    
-    fig = make_subplots(
-        rows=3, cols=1,
-        subplot_titles=("Load Variance Over Time", "Deduplication Ratio Over Time", "Active / Failed Nodes"),
-        specs=[[{"secondary_y": False}], [{"secondary_y": False}], [{"secondary_y": False}]],
-        vertical_spacing=0.12
-    )
-    
-    # Variance trace
-    fig.add_trace(
-        go.Scatter(x=df["step"], y=df["variance"], mode="lines+markers",
-                   name="Variance", line=dict(color="red", width=2),
-                   hovertemplate="Step %{x}<br>Variance: %{y:.3f}<extra></extra>"),
-        row=1, col=1
-    )
-    
-    # Dedup ratio trace
-    fig.add_trace(
-        go.Scatter(x=df["step"], y=df["dedup_ratio"], mode="lines+markers",
-                   name="Dedup Ratio", line=dict(color="green", width=2),
-                   hovertemplate="Step %{x}<br>Dedup Ratio: %{y:.3f}<extra></extra>"),
-        row=2, col=1
-    )
-
-    # Active / failed nodes trace
-    if "active_nodes" in df.columns and "failed_nodes" in df.columns:
-        fig.add_trace(
-            go.Bar(x=df["step"], y=df["active_nodes"], name="Active Nodes", marker_color="steelblue", opacity=0.7),
-            row=3, col=1
-        )
-        fig.add_trace(
-            go.Bar(x=df["step"], y=df["failed_nodes"], name="Failed Nodes", marker_color="crimson", opacity=0.7),
-            row=3, col=1
-        )
-    
-    fig.update_xaxes(title_text="Time Step", row=1, col=1)
-    fig.update_xaxes(title_text="Time Step", row=2, col=1)
-    fig.update_yaxes(title_text="Variance", row=1, col=1)
-    fig.update_yaxes(title_text="Dedup Ratio", row=2, col=1)
-    
-    fig.update_layout(
-        title_text="Simulation Metrics Progression",
-        height=700,
-        hovermode="x unified",
-        showlegend=True
-    )
-    
+    fig.update_layout(title="Node Utilization & Replication", showlegend=False, height=450)
     return fig
 
 
 def create_hypergraph_interactive(hg_model) -> go.Figure:
-    """Create interactive hypergraph visualization using Plotly.
-    
-    Args:
-        hg_model: HyperGraphModel instance.
-    
-    Returns:
-        Plotly Figure showing network graph.
-    """
-    import networkx as nx
-    
-    G = hg_model.graph
-    if not G.nodes():
-        return go.Figure().add_annotation(text="Hypergraph is empty")
-    
-    # Use spring layout
-    pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
-    
-    # Extract edges
+    """Create an interactive hypergraph figure from a HyperGraphModel or NetworkX graph."""
+    # Accept either a HyperGraphModel instance or a NetworkX Graph
+    G = getattr(hg_model, "graph", hg_model)
+    pos = nx.spring_layout(G, seed=42)
+
+    # build edge coordinates and hover text
     edge_x = []
     edge_y = []
     edge_text = []
-    
     for u, v, data in G.edges(data=True):
         x0, y0 = pos[u]
         x1, y1 = pos[v]
-        edge_x.append(x0)
-        edge_x.append(x1)
-        edge_x.append(None)
-        edge_y.append(y0)
-        edge_y.append(y1)
-        edge_y.append(None)
+        edge_x += [x0, x1, None]
+        edge_y += [y0, y1, None]
         shared_count = data.get("shared_count", 0)
         edge_text.append(f"{u} ↔ {v}: {shared_count} shared files")
-    
+
     edge_trace = go.Scatter(
         x=edge_x, y=edge_y,
         mode="lines",
         line=dict(width=2, color="gray"),
-        hoverinfo="none",
+        hoverinfo="text",
+        text=edge_text,
         showlegend=False
     )
-    
+
     # Extract nodes
     node_x = []
     node_y = []
     node_text = []
     node_size = []
     node_color = []
-    
+
     for node in G.nodes():
         x, y = pos[node]
         node_x.append(x)
@@ -196,7 +108,7 @@ def create_hypergraph_interactive(hg_model) -> go.Figure:
         node_text.append(txt)
         node_size.append(max(20, util * 15))
         node_color.append(clr)
-    
+
     node_trace = go.Scatter(
         x=node_x, y=node_y,
         mode="markers+text",
@@ -214,7 +126,7 @@ def create_hypergraph_interactive(hg_model) -> go.Figure:
         ),
         showlegend=False
     )
-    
+
     fig = go.Figure(data=[edge_trace, node_trace])
     fig.update_layout(
         title="Interactive Hypergraph: Storage Nodes & Shared Files",
@@ -224,7 +136,7 @@ def create_hypergraph_interactive(hg_model) -> go.Figure:
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
     )
-    
+
     return fig
 
 
@@ -312,6 +224,43 @@ def create_animated_file_replication(history: List[Dict], output_height: int = 7
         }]
     )
 
+    return fig
+
+
+def create_metrics_timeseries(history: List[Dict]) -> go.Figure:
+    """Create a Plotly time-series figure for simulation metrics stored in history.
+
+    Expects history to be a list of dicts with keys like 'step', 'total_blocks',
+    'unique_blocks', 'avg_replication', 'active_nodes', 'failed_nodes'.
+    """
+    if not history:
+        return go.Figure().add_annotation(text="No history available")
+
+    steps = [h.get('step', i) for i, h in enumerate(history)]
+    total = [h.get('total_blocks', None) for h in history]
+    unique = [h.get('unique_blocks', None) for h in history]
+    avg_rep = [h.get('avg_replication', None) for h in history]
+    active = [h.get('active_nodes', None) for h in history]
+    failed = [h.get('failed_nodes', 0) for h in history]
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.12,
+                        subplot_titles=("Blocks & Replication", "Node Availability"))
+
+    fig.add_trace(go.Scatter(x=steps, y=total, mode='lines+markers', name='Total Blocks', marker=dict(color='steelblue')),
+                  row=1, col=1)
+    fig.add_trace(go.Scatter(x=steps, y=unique, mode='lines+markers', name='Unique Blocks', marker=dict(color='green')),
+                  row=1, col=1)
+    fig.add_trace(go.Bar(x=steps, y=avg_rep, name='Avg Replication', marker_color='indianred', opacity=0.6), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=steps, y=active, mode='lines+markers', name='Active Nodes', marker=dict(color='darkblue')),
+                  row=2, col=1)
+    fig.add_trace(go.Scatter(x=steps, y=failed, mode='lines+markers', name='Failed Nodes', marker=dict(color='crimson')),
+                  row=2, col=1)
+
+    fig.update_layout(height=500, showlegend=True, title_text='Simulation Metrics Over Time')
+    fig.update_xaxes(title_text='Step', row=2, col=1)
+    fig.update_yaxes(title_text='Blocks / Replication', row=1, col=1)
+    fig.update_yaxes(title_text='Node count', row=2, col=1)
     return fig
 
 
