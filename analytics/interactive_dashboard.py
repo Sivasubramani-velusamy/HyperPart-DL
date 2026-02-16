@@ -325,9 +325,36 @@ def generate_dashboard_html(nodes: List[StorageNode], replication_counts: Dict[s
             f.write("<h2>Animated File Replication (Nodes ↔ Files)</h2>\n")
             f.write("<div id='anim-chart'></div>\n")
             f.write("</div>\n")
+        # Controls: filtering, playback
+        f.write("<div class='chart-container'><h2>Controls</h2>\n")
+        f.write("<div style='display:flex; gap:12px; align-items:center'>\n")
+        f.write("<label>Min replicas: <input id='min-rep' type='number' value='1' min='1' style='width:70px'></label>\n")
+        f.write("<label>Node filter: <select id='node-filter'><option value=''>-- all --</option></select></label>\n")
+        f.write("<label>Playback interval(ms): <input id='play-interval' type='number' value='700' min='50' style='width:90px'></label>\n")
+        f.write("<button id='play-btn'>Play</button> <button id='pause-btn'>Pause</button> <input id='step-range' type='range' min='0' max='0' value='0' style='width:260px'>\n")
+        f.write("</div></div>\n")
         
-        # Embed scripts
+        # Prepare embedded JSON data for client-side interactions
+        node_info = []
+        for n in nodes:
+            node_info.append({
+                "node_id": n.node_id,
+                "capacity": n.get_capacity(),
+                "used": n.get_utilization(),
+                "util_ratio": n.get_utilization_ratio(),
+                "num_files": len(set(n.get_labels()))
+            })
+
+        latest_placement = {}
+        if history and len(history) > 0:
+            latest_placement = history[-1].get("placement", {})
+
         f.write("<script>\n")
+        f.write(f"var node_info = {json.dumps(node_info)};\n")
+        f.write(f"var latest_placement = {json.dumps(latest_placement)};\n")
+        f.write(f"var history = {json.dumps(history or [])};\n")
+        f.write(f"var replication_counts = {json.dumps(replication_counts)};\n")
+
         f.write(f"var utilData = {util_fig.to_json()};\n")
         f.write("Plotly.newPlot('util-chart', utilData.data, utilData.layout);\n")
         
@@ -343,6 +370,25 @@ def generate_dashboard_html(nodes: List[StorageNode], replication_counts: Dict[s
             f.write(f"var animData = {anim_fig.to_json()};\n")
             # use frames and layout to create animation
             f.write("Plotly.newPlot('anim-chart', animData.data, animData.layout).then(function() { Plotly.addFrames('anim-chart', animData.frames); });\n")
+
+            # initialize controls and interactivity
+            f.write("// populate node filter\n")
+            f.write("var nf = document.getElementById('node-filter'); node_info.forEach(n=>{ var o=document.createElement('option'); o.value=n.node_id; o.textContent=n.node_id; nf.appendChild(o); });\n")
+
+            # build file list and attach click handlers
+            f.write("function rebuildFileList(minRep){ var el=document.getElementById('util-chart'); try{ var repTrace = utilData.data[1]; var labels = repTrace.x; var vals = repTrace.y; var container = document.querySelector('#util-chart'); }catch(e){} }\n")
+
+            # Playback: custom player to sync anim-chart frames with ts-chart indicator
+            f.write("var playInterval=null; var currentStep=0; var maxStep = history.length? history.length-1:0; document.getElementById('step-range').max = maxStep;\n")
+            f.write("function setTSMarker(step){ try{ var gd='ts-chart'; var x = step; Plotly.relayout(gd, {'shapes':[ {type:'line', x0:x, x1:x, y0:0, y1:1, xref:'x', yref:'paper', line:{color:'crimson', width:2}} ]}); }catch(e){} }\n")
+            f.write("function stepTo(i){ currentStep=i; document.getElementById('step-range').value=i; var name = ''+ (history[i] && history[i].step !== undefined? history[i].step: i); try{ Plotly.animate('anim-chart', [name], {transition:{duration:0}, frame:{duration:0, redraw:true}}); }catch(e){} setTSMarker(i); }\n")
+            f.write("document.getElementById('step-range').addEventListener('input', (e)=>{ stepTo(parseInt(e.target.value)); });\n")
+            f.write("document.getElementById('play-btn').addEventListener('click', ()=>{ if(playInterval) return; var interval = parseInt(document.getElementById('play-interval').value||700); playInterval = setInterval(()=>{ currentStep = Math.min(maxStep, currentStep+1); stepTo(currentStep); if(currentStep>=maxStep){ clearInterval(playInterval); playInterval=null;} }, interval); });\n")
+            f.write("document.getElementById('pause-btn').addEventListener('click', ()=>{ if(playInterval){ clearInterval(playInterval); playInterval=null; } });\n")
+
+            # Node click handlers to show drilldowns
+            f.write("function showNodeDrill(nid){ var files = latest_placement[nid]||[]; var html = '<h4>Files on '+nid+'</h4><ul>'; files.forEach(f=>{ html += '<li>'+f+'</li>'; }); html += '</ul>'; var div=document.getElementById('ts-chart'); var holder=document.getElementById('node-drill'); if(!holder){ holder=document.createElement('div'); holder.id='node-drill'; div.parentNode.insertBefore(holder, div.nextSibling);} holder.innerHTML = html; }\n")
+            f.write("document.getElementById('node-filter').addEventListener('change', (e)=>{ var nid=e.target.value; if(!nid) return; showNodeDrill(nid); });\n")
         
         f.write("</script>\n")
         f.write("</body>\n</html>\n")
