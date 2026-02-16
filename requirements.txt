@@ -4,7 +4,8 @@ torch==2.10.0
 numpy==1.26.4
 matplotlib==3.8.1
 scikit-learn==1.3.2
-# pandas removed to avoid source-build on some Python versions; add if needed
+pandas==2.1.3
+plotly==5.18.0
 numpy==1.26.4
 matplotlib==3.8.1
 scikit-learn==1.3.2

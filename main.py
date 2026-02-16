@@ -12,7 +12,7 @@ from analytics.metrics import compute_replication_counts, node_unique_counts, to
 import os
 
 
-def main() -> None:
+def main() -> tuple:
     """
     Main simulation pipeline for HyperPart-DL.
     
@@ -24,6 +24,9 @@ def main() -> None:
     - Imbalance detection and rebalancing
     - Hypergraph modeling
     - Metrics and visualization
+    
+    Returns:
+        Tuple of (nodes, hg_model) for downstream analytics.
     """
     # create nodes
     nodes: List[StorageNode] = [StorageNode(f"N{i}") for i in range(1, 4)]
@@ -129,6 +132,8 @@ def main() -> None:
         print(f"\nSaved metrics: {os.path.abspath(rep_csv)}, {os.path.abspath(node_csv)}")
     except Exception as e:
         print("Failed to save metrics/plots:", e)
+    
+    return nodes, hg
 
 
 if __name__ == "__main__":
