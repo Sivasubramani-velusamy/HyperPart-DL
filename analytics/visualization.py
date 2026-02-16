@@ -17,3 +17,20 @@ def plot_utilization(nodes: List[StorageNode], save_path: Optional[str] = "utili
     if save_path:
         plt.savefig(save_path)
     plt.close()
+
+
+def plot_replication_distribution(replication_counts: dict, save_path: Optional[str] = "replication_distribution.png") -> None:
+    labels = list(replication_counts.keys())
+    vals = [replication_counts[k] for k in labels]
+    plt.figure(figsize=(8, 4))
+    bars = plt.bar(labels, vals, color="tab:orange")
+    plt.xlabel("Label")
+    plt.ylabel("Replication Count")
+    plt.title("Replication Distribution")
+    plt.xticks(rotation=45, ha="right")
+    for b, v in zip(bars, vals):
+        plt.text(b.get_x() + b.get_width() / 2, v + 0.05, str(v), ha="center", va="bottom", fontsize=8)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path)
+    plt.close()

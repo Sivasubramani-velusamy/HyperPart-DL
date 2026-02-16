@@ -7,10 +7,24 @@ from storage.node_simulation import StorageNode
 from deduplication.hashing import generate_hash
 from repartition.optimizer import calculate_load_variance, detect_imbalance, rebalance
 from hypergraph.hypergraph_model import HyperGraphModel
-from analytics.visualization import plot_utilization
+from analytics.visualization import plot_utilization, plot_replication_distribution
+from analytics.metrics import compute_replication_counts, node_unique_counts, top_replicated, export_metrics_csv, calculate_deduplication_savings
+import os
 
 
 def main() -> None:
+    """
+    Main simulation pipeline for HyperPart-DL.
+    
+    Creates a distributed storage system with:
+    - 3 storage nodes
+    - 8 files with duplicates
+    - Global deduplication
+    - Replication factor of 2
+    - Imbalance detection and rebalancing
+    - Hypergraph modeling
+    - Metrics and visualization
+    """
     # create nodes
     nodes: List[StorageNode] = [StorageNode(f"N{i}") for i in range(1, 4)]
 
@@ -80,6 +94,35 @@ def main() -> None:
     hg.add_storage_nodes(nodes)
     hg.connect_nodes_by_shared_files(nodes)
     hg.display_info()
+
+    # additional analytics / metrics
+    replication_counts = compute_replication_counts(nodes)
+    node_counts = node_unique_counts(nodes)
+    top5 = top_replicated(replication_counts, top=5)
+    dedup_savings = calculate_deduplication_savings(original_blocks, unique_blocks, replication_factor)
+
+    print("\nReplication counts (label: count):")
+    for label, cnt in replication_counts.items():
+        print(f"  - {label}: {cnt}")
+
+    print("\nTop replicated files:")
+    for label, cnt in top5:
+        print(f"  - {label}: {cnt}")
+
+    print("\nDeduplication Savings:")
+    print(f"  - Dedup ratio: {dedup_savings['dedup_ratio']:.3f}")
+    print(f"  - Original blocks: {dedup_savings['original_raw_blocks']}")
+    print(f"  - Unique blocks: {dedup_savings['deduplicated_blocks']}")
+    print(f"  - With replication (factor {replication_factor}): {dedup_savings['with_replication']:.0f}")
+    print(f"  - Space saved: {dedup_savings['space_saved_ratio']*100:.1f}%")
+
+    # save replication plot and export CSV metrics
+    try:
+        plot_replication_distribution(replication_counts)
+        rep_csv, node_csv = export_metrics_csv(replication_counts, node_counts, path_prefix="metrics")
+        print(f"\nSaved metrics: {os.path.abspath(rep_csv)}, {os.path.abspath(node_csv)}")
+    except Exception as e:
+        print("Failed to save metrics/plots:", e)
 
 
 if __name__ == "__main__":
