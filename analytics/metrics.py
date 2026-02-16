@@ -1,4 +1,11 @@
-from typing import Dict, List, Tuple
+"""Metrics helpers for HyperPart-DL.
+
+This module provides functions to compute replication counts, per-node
+unique counts, top-replicated files, deduplication savings calculations,
+and export helpers for writing metrics to CSV files.
+"""
+
+from typing import Dict, List, Tuple, Optional
 import csv
 
 from storage.node_simulation import StorageNode
@@ -81,7 +88,7 @@ def calculate_deduplication_savings(original_count: int, unique_count: int, repl
     }
 
 
-def export_metrics_csv(replication_counts: Dict[str, int], node_counts: Dict[str, int], path_prefix: str = "metrics", nodes: List[StorageNode] = None) -> Tuple[str, str]:
+def export_metrics_csv(replication_counts: Dict[str, int], node_counts: Dict[str, int], path_prefix: str = "metrics", nodes: Optional[List[StorageNode]] = None) -> Tuple[str, str]:
     """Export replication and node metrics to CSV files.
     
     Args:
