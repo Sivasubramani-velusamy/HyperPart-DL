@@ -1,0 +1,91 @@
+Metadata-Version: 2.4
+Name: hyperpart-dl
+Version: 0.1.0
+Summary: Distributed storage simulation with deduplication, load balancing, and hypergraph modeling
+Author-email: HyperPart Team <info@hyperpart.dev>
+Project-URL: Repository, https://github.com/example/hyperpart-dl
+Project-URL: Documentation, https://hyperpart-dl.readthedocs.io
+Keywords: storage,distributed-systems,deduplication,load-balancing,hypergraph
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: System :: Distributed Computing
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: networkx>=3.2
+Requires-Dist: numpy>=1.26.4
+Requires-Dist: matplotlib>=3.8.1
+Requires-Dist: scikit-learn>=1.3.2
+Provides-Extra: torch
+Requires-Dist: torch>=2.10.0; extra == "torch"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: black>=23.0; extra == "dev"
+Requires-Dist: pylint>=2.17; extra == "dev"
+
+# HyperPart-DL
+
+Lightweight distributed storage simulation with deduplication, load imbalance detection/rebalancing, and hypergraph modeling of replicated files.
+
+Prerequisites
+- Python 3.11 (recommended)
+- Git (optional)
+
+Quick setup (Windows)
+1. Create and activate a Python 3.11 venv:
+
+```
+py -3.11 -m venv .venv311
+.\.venv311\Scripts\activate
+```
+
+2. Upgrade pip and install dependencies:
+
+```
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Run
+
+```
+python main.py
+```
+
+Outputs
+- The script prints node utilizations and hypergraph info to stdout.
+- The node utilization plot is saved to `utilization.png` in the project root (non-blocking).
+
+Notes
+- If `pip install` fails building packages (e.g. `pandas`) on newer Python releases, ensure you are using Python 3.11 or install Visual Studio build tools. Alternatively remove `pandas` from `requirements.txt` when running on a different interpreter.
+- To run fully headless you can set the matplotlib backend before running:
+
+Windows cmd:
+```
+set MPLBACKEND=Agg&& python main.py
+```
+PowerShell:
+```
+$env:MPLBACKEND="Agg"; python main.py
+```
+
+Project layout
+
+```
+HyperPart-DL/
+  main.py
+  requirements.txt
+  README.md
+  dataset/
+  storage/node_simulation.py
+  deduplication/hashing.py
+  repartition/optimizer.py
+  hypergraph/hypergraph_model.py
+  analytics/visualization.py
+```
+
+
+"# HyperPart-DL" 

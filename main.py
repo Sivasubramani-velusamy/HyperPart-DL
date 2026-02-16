@@ -7,7 +7,7 @@ from storage.node_simulation import StorageNode
 from deduplication.hashing import generate_hash
 from repartition.optimizer import calculate_load_variance, detect_imbalance, rebalance
 from hypergraph.hypergraph_model import HyperGraphModel
-from analytics.visualization import plot_utilization, plot_replication_distribution
+from analytics.visualization import plot_utilization, plot_replication_distribution, plot_hypergraph
 from analytics.metrics import compute_replication_counts, node_unique_counts, top_replicated, export_metrics_csv, calculate_deduplication_savings
 import os
 
@@ -94,6 +94,12 @@ def main() -> None:
     hg.add_storage_nodes(nodes)
     hg.connect_nodes_by_shared_files(nodes)
     hg.display_info()
+
+    # visualize hypergraph
+    try:
+        plot_hypergraph(hg)
+    except Exception as e:
+        print(f"Failed to visualize hypergraph: {e}")
 
     # additional analytics / metrics
     replication_counts = compute_replication_counts(nodes)
