@@ -25,6 +25,8 @@ class DynamicSimulation:
         self.replication_factor = replication_factor
         self.history: List[Dict] = []
         self.all_files: Dict[str, bytes] = {}
+        # Track failed nodes (node_id -> StorageNode)
+        self.failed_nodes: Dict[str, StorageNode] = {}
 
     def add_files(self, new_files: Dict[str, bytes]) -> None:
         """Add new files to the system and distribute replicas.
@@ -56,6 +58,7 @@ class DynamicSimulation:
             if node.remove_block():
                 removed += 1
 
+
     def rebalance_system(self, threshold: float = 1.0, max_iterations: int = 10) -> int:
         """Detect and rebalance if imbalanced.
         
@@ -75,6 +78,61 @@ class DynamicSimulation:
             else:
                 break
         return moved
+
+    def fail_node(self, node_id: str) -> bool:
+        """Simulate node failure: remove node from active list and redistribute its blocks.
+
+        Args:
+            node_id: Identifier of the node to fail.
+
+        Returns:
+            True if a node was failed, False otherwise.
+        """
+        # find node
+        node = next((n for n in self.nodes if n.node_id == node_id), None)
+        if not node:
+            return False
+
+        # remove from active nodes and store in failed_nodes
+        self.nodes = [n for n in self.nodes if n.node_id != node_id]
+        self.failed_nodes[node_id] = node
+
+        # redistribute blocks previously on failed node to maintain replication factor
+        rep_counts = compute_replication_counts(self.nodes)
+        for h, label in node.data_blocks:
+            count = rep_counts.get(label, 0)
+            while count < self.replication_factor:
+                # pick a node that doesn't already have this label
+                candidates = [n for n in self.nodes if label not in n.get_labels()]
+                if not candidates:
+                    break
+                target = random.choice(candidates)
+                target.store_block(h, label)
+                count += 1
+                rep_counts[label] = count
+
+        print(f"Node {node_id} failed — redistributed its blocks")
+        return True
+
+    def recover_node(self, node_id: str) -> bool:
+        """Recover a previously failed node, re-add it to active nodes and rebalance.
+
+        Args:
+            node_id: Identifier of the node to recover.
+
+        Returns:
+            True if recovery succeeded, False otherwise.
+        """
+        node = self.failed_nodes.pop(node_id, None)
+        if not node:
+            return False
+
+        # re-add node to active list
+        self.nodes.append(node)
+        # On recovery, rebalance to spread load evenly
+        moved = self.rebalance_system()
+        print(f"Node {node_id} recovered — rebalanced ({moved} moves)")
+        return True
 
     def record_metrics(self, step: int) -> Dict:
         """Compute and record metrics for current state.
@@ -100,6 +158,8 @@ class DynamicSimulation:
             "avg_replication": avg_rep,
             "dedup_ratio": dedup_info["dedup_ratio"],
             "space_saved_ratio": dedup_info["space_saved_ratio"],
+            "active_nodes": len(self.nodes),
+            "failed_nodes": len(self.failed_nodes),
         }
         self.history.append(metrics)
         return metrics
@@ -115,6 +175,10 @@ class DynamicSimulation:
         Returns:
             List of metrics dictionaries for each step.
         """
+        # schedule: fail at middle step, recover at final step
+        failure_step = max(1, steps // 2)
+        recovery_step = steps - 1
+
         for step in range(steps):
             print(f"\n--- Step {step} ---")
 
@@ -130,6 +194,18 @@ class DynamicSimulation:
             if step > 0:
                 self.remove_random_files(num_to_remove=1)
                 print("Removed 1 random block")
+
+            # Simulate node failure at scheduled step
+            if step == failure_step and self.nodes:
+                # choose a random active node to fail
+                victim = random.choice(self.nodes)
+                self.fail_node(victim.node_id)
+
+            # Simulate recovery at scheduled step
+            if step == recovery_step and self.failed_nodes:
+                # recover one failed node (pick arbitrary)
+                to_recover = next(iter(self.failed_nodes.keys()))
+                self.recover_node(to_recover)
 
             # Rebalance if needed
             moved = self.rebalance_system(threshold=1.0)
