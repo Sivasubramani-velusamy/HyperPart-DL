@@ -1,0 +1,4 @@
+node_id,unique_labels,utilization,capacity,util_ratio
+N1,4,4,5,0.800
+N2,3,3,3,1.000
+N3,6,6,8,0.750

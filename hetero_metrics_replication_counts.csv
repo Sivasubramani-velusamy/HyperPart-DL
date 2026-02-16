@@ -1,0 +1,10 @@
+label,replication_count
+step0_file0.txt,2
+step0_file1.txt,1
+step1_file0.txt,3
+step1_file1.txt,2
+step2_file0.txt,1
+step2_file1.txt,1
+step3_file0.txt,1
+step4_file0.txt,1
+step4_file1.txt,1

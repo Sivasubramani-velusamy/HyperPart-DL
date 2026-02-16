@@ -47,14 +47,32 @@ def rebalance(nodes: List[StorageNode]) -> bool:
     """
     if not nodes:
         return False
-    nodes_sorted = sorted(nodes, key=lambda n: n.get_utilization())
+    # Sort by utilization ratio (blocks / capacity) when capacities vary
+    def util_key(n: StorageNode) -> float:
+        return n.get_utilization_ratio()
+
+    nodes_sorted = sorted(nodes, key=util_key)
     least = nodes_sorted[0]
     most = nodes_sorted[-1]
-    if most.get_utilization() - least.get_utilization() <= 1:
+
+    # Only move if donor is noticeably more utilized than recipient
+    if util_key(most) - util_key(least) <= 0.05:
         return False
+
+    # Attempt to move one block from most to least (or another candidate with capacity)
     block = most.remove_block()
     if block is None:
         return False
     block_hash, label = block
-    least.store_block(block_hash, label)
-    return True
+
+    # try primary target first
+    candidates = [n for n in nodes_sorted if n.remaining_capacity() != 0 and label not in n.get_labels()]
+    # prefer least-utilized first
+    candidates = sorted(candidates, key=util_key)
+    for target in candidates:
+        if target.store_block(block_hash, label):
+            return True
+
+    # if no candidate accepted block, put it back to the donor
+    most.store_block(block_hash, label)
+    return False

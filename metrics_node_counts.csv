@@ -1,4 +1,4 @@
-node_id,unique_labels
-N1,4
-N2,3
-N3,4
+node_id,unique_labels,utilization,capacity,util_ratio
+N1,5,5,unlimited,5.000
+N2,2,2,unlimited,2.000
+N3,5,5,unlimited,5.000

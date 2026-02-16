@@ -128,7 +128,7 @@ def main() -> tuple:
     # save replication plot and export CSV metrics
     try:
         plot_replication_distribution(replication_counts)
-        rep_csv, node_csv = export_metrics_csv(replication_counts, node_counts, path_prefix="metrics")
+        rep_csv, node_csv = export_metrics_csv(replication_counts, node_counts, path_prefix="metrics", nodes=nodes)
         print(f"\nSaved metrics: {os.path.abspath(rep_csv)}, {os.path.abspath(node_csv)}")
     except Exception as e:
         print("Failed to save metrics/plots:", e)

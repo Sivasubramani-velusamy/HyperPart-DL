@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 
 class StorageNode:
@@ -12,7 +12,7 @@ class StorageNode:
         data_blocks: List of (hash, label) tuples representing stored files.
     """
 
-    def __init__(self, node_id: str) -> None:
+    def __init__(self, node_id: str, capacity: Optional[int] = None) -> None:
         """Initialize a storage node.
         
         Args:
@@ -20,15 +20,20 @@ class StorageNode:
         """
         self.node_id: str = node_id
         self.data_blocks: List[Tuple[str, str]] = []  # list of (hash, label)
+        # capacity: max number of blocks this node can store. None => unlimited
+        self.capacity: Optional[int] = capacity
 
-    def store_block(self, block_hash: str, label: str) -> None:
+    def store_block(self, block_hash: str, label: str) -> bool:
         """Store a file block on this node.
         
         Args:
             block_hash: SHA256 hash of the file content.
             label: Human-readable name/label of the file.
         """
+        if self.capacity is not None and len(self.data_blocks) >= self.capacity:
+            return False
         self.data_blocks.append((block_hash, label))
+        return True
 
     def remove_block(self) -> Tuple[str, str] | None:
         """Remove and return the last block from storage.
@@ -47,6 +52,23 @@ class StorageNode:
             Count of blocks currently stored.
         """
         return len(self.data_blocks)
+
+    def get_capacity(self) -> Optional[int]:
+        """Return configured capacity (None means unlimited)."""
+        return self.capacity
+
+    def remaining_capacity(self) -> Optional[int]:
+        """Return remaining slots (None means unlimited)."""
+        if self.capacity is None:
+            return None
+        return max(0, self.capacity - len(self.data_blocks))
+
+    def get_utilization_ratio(self) -> float:
+        """Return utilization as fraction of capacity (0..1). If unlimited, use absolute count."""
+        if self.capacity is None or self.capacity == 0:
+            # represent as absolute count to preserve ordering
+            return float(len(self.data_blocks))
+        return len(self.data_blocks) / float(self.capacity)
 
     def get_labels(self) -> List[str]:
         """Get all file labels stored on this node.

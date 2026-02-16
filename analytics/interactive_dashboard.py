@@ -8,6 +8,7 @@ import pandas as pd
 
 from storage.node_simulation import StorageNode
 from analytics.metrics import compute_replication_counts
+import json
 
 
 def create_utilization_dashboard(nodes: List[StorageNode], replication_counts: Dict[str, int]) -> go.Figure:
@@ -22,6 +23,8 @@ def create_utilization_dashboard(nodes: List[StorageNode], replication_counts: D
     """
     utilizations = [n.get_utilization() for n in nodes]
     node_ids = [n.node_id for n in nodes]
+    capacities = [n.get_capacity() for n in nodes]
+    ratios = [n.get_utilization_ratio() for n in nodes]
     
     fig = make_subplots(
         rows=1, cols=2,
@@ -30,9 +33,16 @@ def create_utilization_dashboard(nodes: List[StorageNode], replication_counts: D
     )
     
     # Left: Node utilization
+    hover_texts = []
+    for nid, util, cap, r in zip(node_ids, utilizations, capacities, ratios):
+        if cap is None:
+            hover_texts.append(f"{nid}<br>Blocks: {util}<br>Capacity: unlimited")
+        else:
+            hover_texts.append(f"{nid}<br>Blocks: {util}/{cap} ({r*100:.0f}%)")
+
     fig.add_trace(
         go.Bar(x=node_ids, y=utilizations, name="Blocks", marker_color="steelblue",
-               hovertemplate="<b>%{x}</b><br>Blocks: %{y}<extra></extra>"),
+               hovertext=hover_texts, hoverinfo="text"),
         row=1, col=1
     )
     
@@ -72,10 +82,10 @@ def create_metrics_timeseries(history: List[Dict]) -> go.Figure:
     df = pd.DataFrame(history)
     
     fig = make_subplots(
-        rows=2, cols=1,
-        subplot_titles=("Load Variance Over Time", "Deduplication Ratio Over Time"),
-        specs=[[{"secondary_y": False}], [{"secondary_y": False}]],
-        vertical_spacing=0.15
+        rows=3, cols=1,
+        subplot_titles=("Load Variance Over Time", "Deduplication Ratio Over Time", "Active / Failed Nodes"),
+        specs=[[{"secondary_y": False}], [{"secondary_y": False}], [{"secondary_y": False}]],
+        vertical_spacing=0.12
     )
     
     # Variance trace
@@ -93,6 +103,17 @@ def create_metrics_timeseries(history: List[Dict]) -> go.Figure:
                    hovertemplate="Step %{x}<br>Dedup Ratio: %{y:.3f}<extra></extra>"),
         row=2, col=1
     )
+
+    # Active / failed nodes trace
+    if "active_nodes" in df.columns and "failed_nodes" in df.columns:
+        fig.add_trace(
+            go.Bar(x=df["step"], y=df["active_nodes"], name="Active Nodes", marker_color="steelblue", opacity=0.7),
+            row=3, col=1
+        )
+        fig.add_trace(
+            go.Bar(x=df["step"], y=df["failed_nodes"], name="Failed Nodes", marker_color="crimson", opacity=0.7),
+            row=3, col=1
+        )
     
     fig.update_xaxes(title_text="Time Step", row=1, col=1)
     fig.update_xaxes(title_text="Time Step", row=2, col=1)
@@ -164,9 +185,17 @@ def create_hypergraph_interactive(hg_model) -> go.Figure:
         node_x.append(x)
         node_y.append(y)
         util = G.nodes[node].get("utilization", 1)
-        node_text.append(f"<b>{node}</b><br>Utilization: {util}")
+        cap = G.nodes[node].get("capacity", None)
+        if cap is None:
+            txt = f"<b>{node}</b><br>Utilization: {util}<br>Capacity: unlimited"
+            clr = util
+        else:
+            ratio = util / float(cap) if cap > 0 else 0.0
+            txt = f"<b>{node}</b><br>Utilization: {util}/{cap} ({ratio*100:.0f}%)"
+            clr = ratio
+        node_text.append(txt)
         node_size.append(max(20, util * 15))
-        node_color.append(util)
+        node_color.append(clr)
     
     node_trace = go.Scatter(
         x=node_x, y=node_y,
@@ -196,6 +225,93 @@ def create_hypergraph_interactive(hg_model) -> go.Figure:
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
     )
     
+    return fig
+
+
+def create_animated_file_replication(history: List[Dict], output_height: int = 700) -> go.Figure:
+    """Create an animated bipartite visualization of nodes <-> files over time.
+
+    Expects each history entry to contain a `placement` dict mapping node_id -> [labels]
+    and `failed_node_ids` list.
+    """
+    # collect all nodes and files across history
+    if not history:
+        return go.Figure().add_annotation(text="No history available for animation")
+
+    all_nodes = []
+    all_files = set()
+    for h in history:
+        for nid, labels in h.get("placement", {}).items():
+            if nid not in all_nodes:
+                all_nodes.append(nid)
+            for lab in labels:
+                all_files.add(lab)
+    all_files = sorted(list(all_files))
+
+    # layout positions: nodes on top row, files on bottom row
+    n = len(all_nodes)
+    m = len(all_files)
+    node_x = [i * 1.0 for i in range(n)]
+    node_y = [1.0] * n
+    file_x = [i * 1.0 for i in range(m)]
+    file_y = [0.0] * m
+
+    # base traces: nodes and files (markers)
+    node_trace = go.Scatter(x=node_x, y=node_y, mode="markers+text", text=all_nodes,
+                            marker=dict(size=30, color="steelblue"), textposition="top center",
+                            hoverinfo="text")
+    file_trace = go.Scatter(x=file_x, y=file_y, mode="markers+text", text=all_files,
+                            marker=dict(size=18, color="lightgray"), textposition="bottom center",
+                            hoverinfo="text")
+
+    frames = []
+    # create frames for each time step
+    for step_data in history:
+        step = step_data.get("step")
+        placement = step_data.get("placement", {})
+        failed = set(step_data.get("failed_node_ids", []))
+
+        # build edge coordinates
+        edge_x = []
+        edge_y = []
+        for ni, nid in enumerate(all_nodes):
+            labels = placement.get(nid, [])
+            for lab in labels:
+                if lab in all_files:
+                    fi = all_files.index(lab)
+                    edge_x += [node_x[ni], file_x[fi], None]
+                    edge_y += [node_y[ni], file_y[fi], None]
+
+        # node colors reflect failed status
+        node_colors = ["crimson" if nid in failed else "steelblue" for nid in all_nodes]
+
+        frame = go.Frame(data=[
+            go.Scatter(x=edge_x, y=edge_y, mode="lines", line=dict(color="gray", width=2), hoverinfo="none"),
+            go.Scatter(x=node_x, y=node_y, mode="markers+text", marker=dict(size=30, color=node_colors), text=all_nodes, textposition="top center", hoverinfo="text"),
+            go.Scatter(x=file_x, y=file_y, mode="markers+text", marker=dict(size=18, color="lightgray"), text=all_files, textposition="bottom center", hoverinfo="text"),
+        ], name=str(step), layout=go.Layout(title_text=f"File replication - step {step}"))
+        frames.append(frame)
+
+    # initial data = first frame
+    fig = go.Figure(data=frames[0].data, frames=frames)
+    fig.update_layout(
+        title=f"File-Node Replication Animation (steps: {len(frames)})",
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        height=output_height,
+        updatemenus=[{
+            "type": "buttons",
+            "buttons": [
+                {"label": "Play", "method": "animate", "args": [None, {"frame": {"duration": 700, "redraw": True}, "fromcurrent": True}]},
+                {"label": "Pause", "method": "animate", "args": [[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate", "transition": {"duration": 0}}]}
+            ]
+        }],
+        sliders=[{
+            "steps": [{"method": "animate", "label": f.get("name"), "args": [[f.get("name")], {"mode": "immediate", "frame": {"duration": 0, "redraw": True}, "transition": {"duration": 0}}]} for f in frames],
+            "currentvalue": {"prefix": "Step: "}
+        }]
+    )
+
     return fig
 
 
@@ -254,6 +370,12 @@ def generate_dashboard_html(nodes: List[StorageNode], replication_counts: Dict[s
             f.write("<h2>Metrics Over Time</h2>\n")
             f.write("<div id='ts-chart'></div>\n")
             f.write("</div>\n")
+        # Animated file replication (if placement snapshots available)
+        if history and all('placement' in h for h in history):
+            f.write("<div class='chart-container'>\n")
+            f.write("<h2>Animated File Replication (Nodes ↔ Files)</h2>\n")
+            f.write("<div id='anim-chart'></div>\n")
+            f.write("</div>\n")
         
         # Embed scripts
         f.write("<script>\n")
@@ -267,6 +389,11 @@ def generate_dashboard_html(nodes: List[StorageNode], replication_counts: Dict[s
             ts_fig = create_metrics_timeseries(history)
             f.write(f"var tsData = {ts_fig.to_json()};\n")
             f.write("Plotly.newPlot('ts-chart', tsData.data, tsData.layout);\n")
+        if history and all('placement' in h for h in history):
+            anim_fig = create_animated_file_replication(history)
+            f.write(f"var animData = {anim_fig.to_json()};\n")
+            # use frames and layout to create animation
+            f.write("Plotly.newPlot('anim-chart', animData.data, animData.layout).then(function() { Plotly.addFrames('anim-chart', animData.frames); });\n")
         
         f.write("</script>\n")
         f.write("</body>\n</html>\n")

@@ -262,6 +262,26 @@ step,variance,dedup_ratio,space_saved_ratio
 4,0.222,1.000,0.0
 ```
 
+### Heterogeneous Node Capacities
+
+Run a simulation where nodes have different storage capacities:
+
+```bash
+python run_hetero_simulation.py
+```
+
+This creates `hetero_utilization.png`, `hetero_metrics_node_counts.csv`, and `hetero_metrics_replication_counts.csv`, and `hetero_simulation_history.csv`.
+
+The `DynamicSimulation` constructor accepts an optional `capacities` list (per-node integer capacities) for custom scenarios:
+
+```python
+from simulation import DynamicSimulation
+sim = DynamicSimulation(num_nodes=3, replication_factor=2, capacities=[5,3,8])
+sim.run_simulation(steps=5)
+```
+
+The interactive dashboard and CSV exports now include `capacity` and `util_ratio` per node, and time-series charts show active/failed node counts.
+
 ---
 
 ## Metrics & Outputs

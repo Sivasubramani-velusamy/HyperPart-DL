@@ -81,7 +81,7 @@ def calculate_deduplication_savings(original_count: int, unique_count: int, repl
     }
 
 
-def export_metrics_csv(replication_counts: Dict[str, int], node_counts: Dict[str, int], path_prefix: str = "metrics") -> Tuple[str, str]:
+def export_metrics_csv(replication_counts: Dict[str, int], node_counts: Dict[str, int], path_prefix: str = "metrics", nodes: List[StorageNode] = None) -> Tuple[str, str]:
     """Export replication and node metrics to CSV files.
     
     Args:
@@ -102,9 +102,21 @@ def export_metrics_csv(replication_counts: Dict[str, int], node_counts: Dict[str
             writer.writerow([label, cnt])
 
     with open(node_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["node_id", "unique_labels"])
-        for node, cnt in sorted(node_counts.items(), key=lambda x: x[0]):
-            writer.writerow([node, cnt])
+        # If full node objects provided, include capacity and utilization
+        if nodes is not None:
+            writer = csv.writer(f)
+            writer.writerow(["node_id", "unique_labels", "utilization", "capacity", "util_ratio"])
+            node_map = {n.node_id: n for n in nodes}
+            for node_id, cnt in sorted(node_counts.items(), key=lambda x: x[0]):
+                n = node_map.get(node_id)
+                util = n.get_utilization() if n else cnt
+                cap = n.get_capacity() if n else None
+                util_ratio = n.get_utilization_ratio() if n else 0.0
+                writer.writerow([node_id, cnt, util, cap if cap is not None else "unlimited", f"{util_ratio:.3f}"])
+        else:
+            writer = csv.writer(f)
+            writer.writerow(["node_id", "unique_labels"])
+            for node, cnt in sorted(node_counts.items(), key=lambda x: x[0]):
+                writer.writerow([node, cnt])
 
     return rep_path, node_path

@@ -12,7 +12,7 @@ class DynamicSimulation:
     Tracks metrics progression (variance, dedup ratio, replication) across steps.
     """
 
-    def __init__(self, num_nodes: int = 3, replication_factor: int = 2, seed: int = 42):
+    def __init__(self, num_nodes: int = 3, replication_factor: int = 2, seed: int = 42, capacities: List[int] = None):
         """Initialize simulation.
         
         Args:
@@ -21,7 +21,11 @@ class DynamicSimulation:
             seed: Random seed for reproducibility.
         """
         random.seed(seed)
-        self.nodes: List[StorageNode] = [StorageNode(f"N{i}") for i in range(1, num_nodes + 1)]
+        # create nodes, optionally with heterogeneous capacities
+        if capacities and len(capacities) >= num_nodes:
+            self.nodes = [StorageNode(f"N{i}", capacity=capacities[i-1]) for i in range(1, num_nodes + 1)]
+        else:
+            self.nodes = [StorageNode(f"N{i}") for i in range(1, num_nodes + 1)]
         self.replication_factor = replication_factor
         self.history: List[Dict] = []
         self.all_files: Dict[str, bytes] = {}
@@ -42,9 +46,16 @@ class DynamicSimulation:
                 self.all_files[label] = content
 
         for block_hash, label in hash_to_label.items():
-            chosen = random.sample(self.nodes, k=min(self.replication_factor, len(self.nodes)))
-            for n in chosen:
-                n.store_block(block_hash, label)
+            # place replicas while respecting capacity and avoiding duplicates on same node
+            placed = 0
+            candidates = [n for n in self.nodes if label not in n.get_labels() and (n.remaining_capacity() is None or n.remaining_capacity() > 0)]
+            while placed < min(self.replication_factor, len(self.nodes)) and candidates:
+                target = random.choice(candidates)
+                ok = target.store_block(block_hash, label)
+                if ok:
+                    placed += 1
+                # refresh candidates
+                candidates = [n for n in self.nodes if label not in n.get_labels() and (n.remaining_capacity() is None or n.remaining_capacity() > 0)]
 
     def remove_random_files(self, num_to_remove: int) -> None:
         """Randomly remove files from nodes to simulate churn.
@@ -150,6 +161,10 @@ class DynamicSimulation:
         avg_rep = sum(rep_counts.values()) / len(rep_counts) if rep_counts else 0
         dedup_info = calculate_deduplication_savings(len(self.all_files), unique_blocks, self.replication_factor)
 
+        # capture placement snapshot: node_id -> list of labels
+        placement = {n.node_id: list(n.get_labels()) for n in self.nodes}
+        failed_ids = list(self.failed_nodes.keys())
+
         metrics = {
             "step": step,
             "total_blocks": total_blocks,
@@ -158,6 +173,8 @@ class DynamicSimulation:
             "avg_replication": avg_rep,
             "dedup_ratio": dedup_info["dedup_ratio"],
             "space_saved_ratio": dedup_info["space_saved_ratio"],
+            "placement": placement,
+            "failed_node_ids": failed_ids,
             "active_nodes": len(self.nodes),
             "failed_nodes": len(self.failed_nodes),
         }
